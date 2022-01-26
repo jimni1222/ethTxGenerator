@@ -23,16 +23,18 @@ func main() {
 		fmt.Println("executable file is not existed.")
 	}
 
-	txType := "1"
-	chainID := "8217"
+	endpoint := "url"
+	txType := "0"
+	chainID := "1001"
 	gasPrice := "0x5d21dba00"
 	gas := "0xdbba0"
 	baseFee := "0"
-	from := "random"
-	nonce := "1"
+	value := "1"
+	from := "0x{private key}"
+	nonce := "0"
 	to := "random"
 
-	cmd := exec.Command(path, txType, chainID, gasPrice, gas, baseFee, from, nonce, to)
+	cmd := exec.Command(path, endpoint, txType, chainID, gasPrice, gas, baseFee, value, from, nonce, to)
 	stdoutStderr, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Println(err)

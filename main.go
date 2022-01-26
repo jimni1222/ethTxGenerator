@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
-	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"math/big"
 	"os"
 	"strconv"
@@ -14,14 +15,17 @@ import (
 )
 
 var (
+	url string
+
 	txType   int
 	chainID  *big.Int
 	gasPrice *big.Int
 	gas      *big.Int
 	baseFee  *big.Int
+	value    *big.Int
 
 	from  *Account
-	nonce int
+	nonce uint64
 	to    common.Address
 
 	invalidArgs string
@@ -34,7 +38,7 @@ type Account struct {
 
 // `go build` will generate executable file named "ethTxGenerator"
 func main() {
-	invalidArgs = "invalid arguments: txType, chainID, gasPrice, gas, baseFee, from private key, nonce and to address should be passed as arguments. "
+	invalidArgs = "invalid arguments: endpoint, txType, chainID, gasPrice, gas, baseFee, value, from private key, nonce and to address should be passed as arguments. "
 
 	if len(os.Args) < 2 {
 		fmt.Println(invalidArgs, "no arguments are passed.")
@@ -43,44 +47,71 @@ func main() {
 	// os.Args[0] will be program path
 	args := os.Args[1:]
 
-	if len(args) < 8 {
+	if len(args) < 10 {
 		fmt.Println(invalidArgs, "not enough arguments.")
 		os.Exit(1)
 	}
 
-	txType, err := strconv.Atoi(args[0])
+	url = args[0]
+	//fmt.Println("Test url: ", url)
+	client, err := ethclient.Dial(url)
+	if err != nil {
+		fmt.Println("Failed to connect Eth RPC client: %v", err)
+		os.Exit(1)
+	}
+
+	txType, err = strconv.Atoi(args[1])
 	if err != nil {
 		fmt.Println(invalidArgs, err)
 		os.Exit(1)
 	}
-	fmt.Println("Test tx type: ", txType)
+	//fmt.Println("Test tx type: ", txType)
 
-	chainID = parseToBigInt(args[1])
-	fmt.Println("Test chain id: ", chainID)
+	chainID = parseToBigInt(args[2])
+	//fmt.Println("Test chain id: ", chainID)
 
-	gasPrice = parseToBigInt(args[2])
-	fmt.Println("Test gas price: ", gasPrice)
+	gasPrice = parseToBigInt(args[3])
+	//fmt.Println("Test gas price: ", gasPrice)
 
-	gas = parseToBigInt(args[3])
-	fmt.Println("Test gas: ", gas)
+	gas = parseToBigInt(args[4])
+	//fmt.Println("Test gas: ", gas)
 
-	baseFee = parseToBigInt(args[4])
-	fmt.Println("Test base fee: ", baseFee)
+	baseFee = parseToBigInt(args[5])
+	//fmt.Println("Test base fee: ", baseFee)
 
-	from = createTestAccountWithPrivateKey(args[5])
-	fmt.Println("Test from account: ", from.address)
+	value = parseToBigInt(args[6])
+	//fmt.Println("Test value: ", value)
 
-	nonce, err = strconv.Atoi(args[6])
+	from = createTestAccountWithPrivateKey(args[7])
+	//fmt.Println("Test from account: ", from.address)
+
+	nonce, err = strconv.ParseUint(args[8], 10, 0)
 	if err != nil {
 		fmt.Println(invalidArgs, err)
 		os.Exit(1)
 	}
-	fmt.Println("Test nonce: ", nonce)
+	//fmt.Println("Test nonce: ", nonce)
 
-	to = parseToAddress(args[7])
-	fmt.Println("Test to account: ", to.String())
+	to = parseToAddress(args[9])
+	//fmt.Println("Test to account: ", to.String())
 
-	createTxWithGeth()
+	tx := createTxWithGeth()
+	//encoded, err := tx.MarshalBinary()
+	//if err != nil {
+	//	os.Exit(1)
+	//}
+	//fmt.Println("Signed Tx")
+	//fmt.Println(hex.EncodeToString(encoded))
+
+	ctx := context.Background()
+	err = client.SendTransaction(ctx, tx)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	hash := tx.Hash().String()
+	fmt.Println(hash)
 }
 
 func parseToBigInt(arg string) *big.Int {
@@ -109,6 +140,10 @@ func parseToAddress(addr string) common.Address {
 func createTestAccountWithPrivateKey(prv string) *Account {
 	if prv == "random" {
 		return generateRandomAccount()
+	}
+
+	if strings.Contains(prv, "0x") {
+		prv = prv[2:]
 	}
 
 	acc, err := crypto.HexToECDSA(prv)
@@ -141,25 +176,25 @@ func genRandomPrivateKey() *ecdsa.PrivateKey {
 	return acc
 }
 
-func createTxWithGeth() string {
+func createTxWithGeth() *types.Transaction {
 	var txdata types.TxData
 	signer := types.NewLondonSigner(chainID)
-	nonce := uint64(0)
 
 	if txType == 0 {
 		txdata = &types.LegacyTx{
 			Nonce:    nonce,
 			To:       &to,
-			Gas:      30000,
+			Gas:      gas.Uint64(),
 			GasPrice: gasPrice,
 			Data:     []byte{},
+			Value:    value,
 		}
 	} else if txType == 1 {
 		txdata = &types.AccessListTx{
 			ChainID:  chainID,
 			Nonce:    nonce,
 			To:       &to,
-			Gas:      30000,
+			Gas:      gas.Uint64(),
 			GasPrice: gasPrice,
 			AccessList: types.AccessList{
 				{
@@ -167,7 +202,8 @@ func createTxWithGeth() string {
 					StorageKeys: []common.Hash{{0}},
 				},
 			},
-			Data: []byte{},
+			Data:  []byte{},
+			Value: value,
 		}
 	} else if txType == 2 {
 		maxPriorityFeePerGas := gasPrice
@@ -179,14 +215,15 @@ func createTxWithGeth() string {
 			To:        &to,
 			GasFeeCap: maxFeePerGas,
 			GasTipCap: maxPriorityFeePerGas,
-			Gas:       30000,
+			Gas:       gas.Uint64(),
 			AccessList: types.AccessList{
 				{
 					Address:     to,
 					StorageKeys: []common.Hash{{0}},
 				},
 			},
-			Data: []byte{},
+			Data:  []byte{},
+			Value: value,
 		}
 	} else {
 		fmt.Println("invalid tx type: ", txType)
@@ -198,13 +235,5 @@ func createTxWithGeth() string {
 		os.Exit(1)
 	}
 
-	encoded, err := tx.MarshalBinary()
-	if err != nil {
-		os.Exit(1)
-	}
-	fmt.Println("Signed Tx")
-	fmt.Println(hex.EncodeToString(encoded))
-
-	return hex.EncodeToString(encoded)
-
+	return tx
 }
