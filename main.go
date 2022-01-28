@@ -23,10 +23,11 @@ var (
 	gas      *big.Int
 	baseFee  *big.Int
 	value    *big.Int
+	data     []byte
 
 	from  *Account
 	nonce uint64
-	to    common.Address
+	to    *common.Address
 
 	invalidArgs string
 )
@@ -38,7 +39,7 @@ type Account struct {
 
 // `go build` will generate executable file named "ethTxGenerator"
 func main() {
-	invalidArgs = "invalid arguments: endpoint, txType, chainID, gasPrice, gas, baseFee, value, from private key, nonce and to address should be passed as arguments. "
+	invalidArgs = "invalid arguments: endpoint txType chainID gasPrice gas baseFee value fromPrivateKey nonce toAddress [data]. "
 
 	if len(os.Args) < 2 {
 		fmt.Println(invalidArgs, "no arguments are passed.")
@@ -46,8 +47,9 @@ func main() {
 	}
 	// os.Args[0] will be program path
 	args := os.Args[1:]
+	argsLen := len(args)
 
-	if len(args) < 10 {
+	if argsLen < 10 {
 		fmt.Println(invalidArgs, "not enough arguments.")
 		os.Exit(1)
 	}
@@ -95,14 +97,14 @@ func main() {
 	to = parseToAddress(args[9])
 	//fmt.Println("Test to account: ", to.String())
 
-	tx := createTxWithGeth()
-	//encoded, err := tx.MarshalBinary()
-	//if err != nil {
-	//	os.Exit(1)
-	//}
-	//fmt.Println("Signed Tx")
-	//fmt.Println(hex.EncodeToString(encoded))
+	// `data` is optional field, so if user pass the last parameter, then set to `data`.
+	if argsLen == 11 {
+		data = []byte(args[10])
+	} else {
+		data = []byte{}
+	}
 
+	tx := createTxWithGeth()
 	ctx := context.Background()
 	err = client.SendTransaction(ctx, tx)
 	if err != nil {
@@ -129,12 +131,16 @@ func parseToBigInt(arg string) *big.Int {
 	return i
 }
 
-func parseToAddress(addr string) common.Address {
+func parseToAddress(addr string) *common.Address {
 	if addr == "random" {
-		return generateRandomAccount().address
+		return &generateRandomAccount().address
+	}
+	if addr == "nil" {
+		return nil
 	}
 
-	return common.HexToAddress(addr)
+	address := common.HexToAddress(addr)
+	return &address
 }
 
 func createTestAccountWithPrivateKey(prv string) *Account {
@@ -183,26 +189,26 @@ func createTxWithGeth() *types.Transaction {
 	if txType == 0 {
 		txdata = &types.LegacyTx{
 			Nonce:    nonce,
-			To:       &to,
+			To:       to,
 			Gas:      gas.Uint64(),
 			GasPrice: gasPrice,
-			Data:     []byte{},
+			Data:     data,
 			Value:    value,
 		}
 	} else if txType == 1 {
 		txdata = &types.AccessListTx{
 			ChainID:  chainID,
 			Nonce:    nonce,
-			To:       &to,
+			To:       to,
 			Gas:      gas.Uint64(),
 			GasPrice: gasPrice,
 			AccessList: types.AccessList{
 				{
-					Address:     to,
+					Address:     *to,
 					StorageKeys: []common.Hash{{0}},
 				},
 			},
-			Data:  []byte{},
+			Data:  data,
 			Value: value,
 		}
 	} else if txType == 2 {
@@ -212,17 +218,17 @@ func createTxWithGeth() *types.Transaction {
 		txdata = &types.DynamicFeeTx{
 			ChainID:   chainID,
 			Nonce:     nonce,
-			To:        &to,
+			To:        to,
 			GasFeeCap: maxFeePerGas,
 			GasTipCap: maxPriorityFeePerGas,
 			Gas:       gas.Uint64(),
 			AccessList: types.AccessList{
 				{
-					Address:     to,
+					Address:     *to,
 					StorageKeys: []common.Hash{{0}},
 				},
 			},
-			Data:  []byte{},
+			Data:  data,
 			Value: value,
 		}
 	} else {
