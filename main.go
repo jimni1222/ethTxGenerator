@@ -99,7 +99,7 @@ func main() {
 
 	// `data` is optional field, so if user pass the last parameter, then set to `data`.
 	if argsLen == 11 {
-		data = []byte(args[10])
+		data = common.FromHex(args[10])
 	} else {
 		data = []byte{}
 	}
