@@ -42,7 +42,7 @@ func main() {
 	invalidArgs = "invalid arguments: endpoint txType chainID gasPrice gas baseFee value fromPrivateKey nonce toAddress [data]. "
 
 	if len(os.Args) < 2 {
-		fmt.Println(invalidArgs, "no arguments are passed.")
+		fmt.Print(invalidArgs, "no arguments are passed.")
 		os.Exit(1)
 	}
 	// os.Args[0] will be program path
@@ -50,52 +50,52 @@ func main() {
 	argsLen := len(args)
 
 	if argsLen < 10 {
-		fmt.Println(invalidArgs, "not enough arguments.")
+		fmt.Print(invalidArgs, "not enough arguments.")
 		os.Exit(1)
 	}
 
 	url = args[0]
-	//fmt.Println("Test url: ", url)
+	//fmt.Print("Test url: ", url)
 	client, err := ethclient.Dial(url)
 	if err != nil {
-		fmt.Println("Failed to connect Eth RPC client: %v", err)
+		fmt.Print("Failed to connect Eth RPC client: %v", err)
 		os.Exit(1)
 	}
 
 	txType, err = strconv.Atoi(args[1])
 	if err != nil {
-		fmt.Println(invalidArgs, err)
+		fmt.Print(invalidArgs, err)
 		os.Exit(1)
 	}
-	//fmt.Println("Test tx type: ", txType)
+	//fmt.Print("Test tx type: ", txType)
 
 	chainID = parseToBigInt(args[2])
-	//fmt.Println("Test chain id: ", chainID)
+	//fmt.Print("Test chain id: ", chainID)
 
 	gasPrice = parseToBigInt(args[3])
-	//fmt.Println("Test gas price: ", gasPrice)
+	//fmt.Print("Test gas price: ", gasPrice)
 
 	gas = parseToBigInt(args[4])
-	//fmt.Println("Test gas: ", gas)
+	//fmt.Print("Test gas: ", gas)
 
 	baseFee = parseToBigInt(args[5])
-	//fmt.Println("Test base fee: ", baseFee)
+	//fmt.Print("Test base fee: ", baseFee)
 
 	value = parseToBigInt(args[6])
-	//fmt.Println("Test value: ", value)
+	//fmt.Print("Test value: ", value)
 
 	from = createTestAccountWithPrivateKey(args[7])
-	//fmt.Println("Test from account: ", from.address)
+	//fmt.Print("Test from account: ", from.address)
 
 	nonce, err = strconv.ParseUint(args[8], 10, 0)
 	if err != nil {
-		fmt.Println(invalidArgs, err)
+		fmt.Print(invalidArgs, err)
 		os.Exit(1)
 	}
-	//fmt.Println("Test nonce: ", nonce)
+	//fmt.Print("Test nonce: ", nonce)
 
 	to = parseToAddress(args[9])
-	//fmt.Println("Test to account: ", to.String())
+	//fmt.Print("Test to account: ", to.String())
 
 	// `data` is optional field, so if user pass the last parameter, then set to `data`.
 	if argsLen == 11 {
@@ -108,12 +108,12 @@ func main() {
 	ctx := context.Background()
 	err = client.SendTransaction(ctx, tx)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Print(err)
 		os.Exit(1)
 	}
 
 	hash := tx.Hash().String()
-	fmt.Println(hash)
+	fmt.Print(hash)
 }
 
 func parseToBigInt(arg string) *big.Int {
@@ -125,7 +125,7 @@ func parseToBigInt(arg string) *big.Int {
 	}
 	i, ok := i.SetString(arg, base)
 	if !ok {
-		fmt.Println(invalidArgs)
+		fmt.Print(invalidArgs)
 		os.Exit(1)
 	}
 	return i
@@ -154,7 +154,7 @@ func createTestAccountWithPrivateKey(prv string) *Account {
 
 	acc, err := crypto.HexToECDSA(prv)
 	if err != nil {
-		fmt.Println("invalid private key: ", prv)
+		fmt.Print("invalid private key: ", prv)
 		os.Exit(1)
 	}
 
@@ -232,12 +232,13 @@ func createTxWithGeth() *types.Transaction {
 			Value: value,
 		}
 	} else {
-		fmt.Println("invalid tx type: ", txType)
+		fmt.Print("invalid tx type: %v", txType)
+		os.Exit(1)
 	}
 
 	tx, err := types.SignNewTx(from.privateKey, signer, txdata)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Print(err)
 		os.Exit(1)
 	}
 
