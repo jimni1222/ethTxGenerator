@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
 	"os"
 	"strconv"
@@ -15,7 +18,9 @@ import (
 )
 
 var (
-	url string
+	url    string
+	client *ethclient.Client
+	geth   *gethclient.Client
 
 	txType   int
 	chainID  *big.Int
@@ -56,11 +61,14 @@ func main() {
 
 	url = args[0]
 	//fmt.Print("Test url: ", url)
-	client, err := ethclient.Dial(url)
+	ctx := context.Background()
+	rpcClient, err := rpc.DialContext(ctx, url)
 	if err != nil {
-		fmt.Print("Failed to connect Eth RPC client: %v", err)
+		fmt.Print("Failed to connect RPC client: %v", err)
 		os.Exit(1)
 	}
+	client = ethclient.NewClient(rpcClient)
+	geth = gethclient.New(rpcClient)
 
 	txType, err = strconv.Atoi(args[1])
 	if err != nil {
@@ -105,7 +113,6 @@ func main() {
 	}
 
 	tx := createTxWithGeth()
-	ctx := context.Background()
 	err = client.SendTransaction(ctx, tx)
 	if err != nil {
 		fmt.Print(err)
@@ -186,6 +193,20 @@ func createTxWithGeth() *types.Transaction {
 	var txdata types.TxData
 	signer := types.NewLondonSigner(chainID)
 
+	// Create messsage call
+	maxPriorityFeePerGas := gasPrice
+	maxFeePerGas := big.NewInt(0).Add(big.NewInt(0).Mul(baseFee, big.NewInt(2)), maxPriorityFeePerGas)
+	msgCall := ethereum.CallMsg{
+		From:      from.address,
+		To:        to,
+		Gas:       gas.Uint64(),
+		GasPrice:  gasPrice,
+		Data:      data,
+		Value:     value,
+		GasFeeCap: maxFeePerGas,
+		GasTipCap: maxPriorityFeePerGas,
+	}
+
 	if txType == 0 {
 		txdata = &types.LegacyTx{
 			Nonce:    nonce,
@@ -196,43 +217,40 @@ func createTxWithGeth() *types.Transaction {
 			Value:    value,
 		}
 	} else if txType == 1 {
+		accessList, _, _, err := geth.CreateAccessList(context.Background(), msgCall)
+		if err != nil {
+			fmt.Printf("failed to create access list: %v", err)
+			os.Exit(1)
+		}
 		txdata = &types.AccessListTx{
-			ChainID:  chainID,
-			Nonce:    nonce,
-			To:       to,
-			Gas:      gas.Uint64(),
-			GasPrice: gasPrice,
-			AccessList: types.AccessList{
-				{
-					Address:     *to,
-					StorageKeys: []common.Hash{{0}},
-				},
-			},
-			Data:  data,
-			Value: value,
+			ChainID:    chainID,
+			Nonce:      nonce,
+			To:         to,
+			Gas:        gas.Uint64(),
+			GasPrice:   gasPrice,
+			AccessList: *accessList,
+			Data:       data,
+			Value:      value,
 		}
 	} else if txType == 2 {
-		maxPriorityFeePerGas := gasPrice
-		maxFeePerGas := big.NewInt(0).Add(big.NewInt(0).Mul(baseFee, big.NewInt(2)), maxPriorityFeePerGas)
-
+		accessList, _, _, err := geth.CreateAccessList(context.Background(), msgCall)
+		if err != nil {
+			fmt.Printf("failed to create access list: %v", err)
+			os.Exit(1)
+		}
 		txdata = &types.DynamicFeeTx{
-			ChainID:   chainID,
-			Nonce:     nonce,
-			To:        to,
-			GasFeeCap: maxFeePerGas,
-			GasTipCap: maxPriorityFeePerGas,
-			Gas:       gas.Uint64(),
-			AccessList: types.AccessList{
-				{
-					Address:     *to,
-					StorageKeys: []common.Hash{{0}},
-				},
-			},
-			Data:  data,
-			Value: value,
+			ChainID:    chainID,
+			Nonce:      nonce,
+			To:         to,
+			GasFeeCap:  maxFeePerGas,
+			GasTipCap:  maxPriorityFeePerGas,
+			Gas:        gas.Uint64(),
+			AccessList: *accessList,
+			Data:       data,
+			Value:      value,
 		}
 	} else {
-		fmt.Print("invalid tx type: %v", txType)
+		fmt.Printf("invalid tx type: %v", txType)
 		os.Exit(1)
 	}
 
