@@ -122,7 +122,7 @@ func callEthMsg(args []string) {
 		Data:     data,
 		Value:    value,
 	}
-	fmt.Printf("From: %v / To: %v / Gas: %v / GasPrice: %v / Data: %v / Value: %v \n", callMsg.From.String(), callMsg.To.String(), gas, gasPrice, hex.EncodeToString(data), value.String())
+	// fmt.Printf("From: %v / To: %v / Gas: %v / GasPrice: %v / Data: %v / Value: %v \n", callMsg.From.String(), callMsg.To.String(), gas, gasPrice, hex.EncodeToString(data), value.String())
 
 	var ret []byte
 	ret, err := client.CallContract(ctx, callMsg, blockNumber)
@@ -216,7 +216,7 @@ func parseToBigInt(arg string, paramName string) *big.Int {
 	}
 	i, ok := i.SetString(arg, base)
 	if !ok {
-		fmt.Printf("Invalid %v parameter.", paramName)
+		fmt.Print("Invalid parameter: ", paramName)
 		os.Exit(1)
 	}
 	return i
