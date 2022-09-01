@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -30,11 +31,16 @@ var (
 	value    *big.Int
 	data     []byte
 
-	from  *Account
-	nonce uint64
-	to    *common.Address
+	fromAccount *Account
+	nonce       uint64
+	fromAddress *common.Address
+	to          *common.Address
+	blockNumber *big.Int
 
-	invalidArgs string
+	ctx context.Context
+
+	invalidArgsForSendingTx  = "invalid arguments: endpoint txType chainID gasPrice gas baseFee value fromPrivateKey nonce toAddress [data]. "
+	invalidArgsForCallingMsg = "invalid arguments: endpoint eth_call fromAddress toAddress gasPrice gas value data [, blockNumber]."
 )
 
 type Account struct {
@@ -44,23 +50,101 @@ type Account struct {
 
 // `go build` will generate executable file named "ethTxGenerator"
 func main() {
-	invalidArgs = "invalid arguments: endpoint txType chainID gasPrice gas baseFee value fromPrivateKey nonce toAddress [data]. "
-
 	if len(os.Args) < 2 {
-		fmt.Print(invalidArgs, "no arguments are passed.")
+		fmt.Print("invalid arguments: no arguments are passed.")
 		os.Exit(1)
 	}
 	// os.Args[0] will be program path
 	args := os.Args[1:]
+
+	url = args[0]
+	// fmt.Print("Test url: ", url)
+	ctx = context.Background()
+	rpcClient, err := rpc.DialContext(ctx, url)
+	if err != nil {
+		fmt.Print("Failed to connect RPC client: %v", err)
+		os.Exit(1)
+	}
+	client = ethclient.NewClient(rpcClient)
+	geth = gethclient.New(rpcClient)
+
+	if args[1] == "eth_call" {
+		// In case of "eth_call", since eth_call comes in as a program argument,
+		// it is excluded and transmitted as a function parameter.
+		callEthMsg(args[2:])
+		return
+	}
+
+	// If the method name is not entered as a parameter,
+	// send Transaction is operated by default.
+	sendEthTx(args)
+}
+
+func callEthMsg(args []string) {
+	argsLen := len(args)
+
+	if argsLen < 6 {
+		fmt.Print(invalidArgsForCallingMsg, "not enough arguments to call an ethereum message.")
+		os.Exit(1)
+	}
+
+	fromAddress = parseToAddress(args[0])
+	// fmt.Print("Test fromAddress: ", fromAddress.String())
+
+	to = parseToAddress(args[1])
+	// fmt.Print("Test to account: ", to.String()
+
+	gas = parseToBigInt(args[2], "gas")
+	// fmt.Print("Test gas: ", gas)
+
+	gasPrice = parseToBigInt(args[3], "gasPrice")
+	// fmt.Print("Test gas price: ", gasPrice)
+
+	value = parseToBigInt(args[4], "value")
+	// fmt.Print("Test value: ", value)
+
+	data = common.FromHex(args[5])
+	// fmt.Print("Test data: ", data)
+
+	// `blockNumber` is optional field, so if user pass the last parameter, then set to `blockNumber`.
+	if argsLen == 8 {
+		blockNumber = parseToBigInt(args[6], "blockNumber")
+		// fmt.Print("Test blockNumber: ", blockNumber)
+	} else {
+		blockNumber = nil
+	}
+
+	callMsg := ethereum.CallMsg{
+		From:     *fromAddress,
+		To:       to,
+		Gas:      gas.Uint64(),
+		GasPrice: gasPrice,
+		Data:     data,
+		Value:    value,
+	}
+	fmt.Printf("From: %v / To: %v / Gas: %v / GasPrice: %v / Data: %v / Value: %v \n", callMsg.From.String(), callMsg.To.String(), gas, gasPrice, hex.EncodeToString(data), value.String())
+
+	var ret []byte
+	ret, err := client.CallContract(ctx, callMsg, blockNumber)
+	if err != nil {
+		fmt.Print("Error: " + err.Error())
+		os.Exit(1)
+	}
+
+	resultString := hex.EncodeToString(ret)
+	fmt.Print(resultString)
+}
+
+func sendEthTx(args []string) {
 	argsLen := len(args)
 
 	if argsLen < 10 {
-		fmt.Print(invalidArgs, "not enough arguments.")
+		fmt.Print(invalidArgsForSendingTx, "not enough arguments to send an ethereum transaction.")
 		os.Exit(1)
 	}
 
 	url = args[0]
-	//fmt.Print("Test url: ", url)
+	// fmt.Print("Test url: ", url)
 	ctx := context.Background()
 	rpcClient, err := rpc.DialContext(ctx, url)
 	if err != nil {
@@ -72,38 +156,38 @@ func main() {
 
 	txType, err = strconv.Atoi(args[1])
 	if err != nil {
-		fmt.Print(invalidArgs, err)
+		fmt.Print(invalidArgsForSendingTx, err)
 		os.Exit(1)
 	}
-	//fmt.Print("Test tx type: ", txType)
+	// fmt.Print("Test tx type: ", txType)
 
-	chainID = parseToBigInt(args[2])
-	//fmt.Print("Test chain id: ", chainID)
+	chainID = parseToBigInt(args[2], "chainID")
+	// fmt.Print("Test chain id: ", chainID)
 
-	gasPrice = parseToBigInt(args[3])
-	//fmt.Print("Test gas price: ", gasPrice)
+	gasPrice = parseToBigInt(args[3], "gasPrice")
+	// fmt.Print("Test gas price: ", gasPrice)
 
-	gas = parseToBigInt(args[4])
-	//fmt.Print("Test gas: ", gas)
+	gas = parseToBigInt(args[4], "gas")
+	// fmt.Print("Test gas: ", gas)
 
-	baseFee = parseToBigInt(args[5])
-	//fmt.Print("Test base fee: ", baseFee)
+	baseFee = parseToBigInt(args[5], "baseFee")
+	// fmt.Print("Test base fee: ", baseFee)
 
-	value = parseToBigInt(args[6])
-	//fmt.Print("Test value: ", value)
+	value = parseToBigInt(args[6], "value")
+	// fmt.Print("Test value: ", value)
 
-	from = createTestAccountWithPrivateKey(args[7])
-	//fmt.Print("Test from account: ", from.address)
+	fromAccount = createTestAccountWithPrivateKey(args[7])
+	// fmt.Print("Test from account: ", from.address)
 
 	nonce, err = strconv.ParseUint(args[8], 10, 0)
 	if err != nil {
-		fmt.Print(invalidArgs, err)
+		fmt.Print(invalidArgsForSendingTx, err)
 		os.Exit(1)
 	}
-	//fmt.Print("Test nonce: ", nonce)
+	// fmt.Print("Test nonce: ", nonce)
 
 	to = parseToAddress(args[9])
-	//fmt.Print("Test to account: ", to.String())
+	// fmt.Print("Test to account: ", to.String())
 
 	// `data` is optional field, so if user pass the last parameter, then set to `data`.
 	if argsLen == 11 {
@@ -123,7 +207,7 @@ func main() {
 	fmt.Print(hash)
 }
 
-func parseToBigInt(arg string) *big.Int {
+func parseToBigInt(arg string, paramName string) *big.Int {
 	i := new(big.Int)
 	base := 10
 	if strings.Contains(arg, "0x") {
@@ -132,7 +216,7 @@ func parseToBigInt(arg string) *big.Int {
 	}
 	i, ok := i.SetString(arg, base)
 	if !ok {
-		fmt.Print(invalidArgs)
+		fmt.Printf("Invalid %v parameter.", paramName)
 		os.Exit(1)
 	}
 	return i
@@ -197,7 +281,7 @@ func createTxWithGeth() *types.Transaction {
 	maxPriorityFeePerGas := gasPrice
 	maxFeePerGas := big.NewInt(0).Add(big.NewInt(0).Mul(baseFee, big.NewInt(2)), maxPriorityFeePerGas)
 	msgCall := ethereum.CallMsg{
-		From:      from.address,
+		From:      fromAccount.address,
 		To:        to,
 		Gas:       gas.Uint64(),
 		GasPrice:  gasPrice,
@@ -254,7 +338,7 @@ func createTxWithGeth() *types.Transaction {
 		os.Exit(1)
 	}
 
-	tx, err := types.SignNewTx(from.privateKey, signer, txdata)
+	tx, err := types.SignNewTx(fromAccount.privateKey, signer, txdata)
 	if err != nil {
 		fmt.Print(err)
 		os.Exit(1)
